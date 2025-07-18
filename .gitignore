@@ -1,2 +1,50 @@
-*.txt
-*.md
+# Build artifacts
+build/
+bin/
+*.exe
+*.o
+*.obj
+*.a
+*.so
+*.dll
+*.dylib
+
+# CMake files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+
+# IDE files - keep .vscode for shared project configuration
+# .vscode/
+.vs/
+*.vcxproj*
+*.sln
+
+# Compiler outputs
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+
+# Debug files
+*.pdb
+*.ilk
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Asset cache files
+*.meta
+*.cache
+
+# Temporary files
+*.tmp
+*.temp
+
+# External libraries (downloaded via setup_libs.bat)
+libs/
