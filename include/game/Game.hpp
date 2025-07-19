@@ -17,18 +17,19 @@ private:
     int _win_count = 3; // Number of symbols in a row to win
     char _symbols[3] = {' ', 'X', 'O'}; // Default player symbols
     bool _players_turn = true; // Track whose turn it is
-    vector<int> _board; // Dynamic board that resizes based on _board_size
+    // vector<int> _board; // Dynamic board that resizes based on _board_size
+    vector<bool> _player1;
+    vector<bool> _player2;
 
     string _board_sep;
     const string _move_sep = string(20, '=');
 
     void initialize();
-    expected<int, string> player_move();
+    expected<int, string> player_move(vector<bool>& player);
     void render();
-    bool checkBoard(int index);
-    bool checkWin(int index, int* count, int cur_ident);
-    bool checkDiagonal(int start_row, int start_col, int diag_lenght, int cur_ident, int dir);
-
+    bool checkBoard(int index, vector<bool>& player);
+    bool shouldBreak(int new_row, int new_col, int* count, vector<bool>& player);
+    
     void cleanup();
     
     // Private helper functions
