@@ -1,7 +1,7 @@
 @echo off
 REM Get the current folder name as the game name
 for %%i in ("%cd%") do set "GAME_NAME=%%~ni"
-echo Building %GAME_NAME% Game (Release) with C++23, EnTT, and Sokol...
+echo Building %GAME_NAME% Game (Release) in C++23...
 
 REM Define tool paths
 set "CMAKE_PATH=C:\Program Files\CMake\bin\cmake.exe"
@@ -29,9 +29,6 @@ if %ERRORLEVEL% neq 0 (
         set "PATH=%MINGW_PATH%;%PATH%"
     ) else (
         echo Error: g++ is not installed or not in PATH
-        exit /b 1
-    )
-)
         pause
         exit /b 1
     )
