@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <tuple>
 #include <array>
+#include <sstream>
 
 using namespace std;
 
@@ -17,85 +18,154 @@ Game::~Game() {
 
 void Game::run() {
     _running = true;
-
-    int player_choice;
-
-    cout << _move_sep << endl;
-    cout << "Welcome to Tic Tac Toe!" << endl;
-    cout << "Enter your move by writing row and column where you wanna place your piece." << endl;
-    cout << _move_sep << endl;
-    cout << "Select board dimension (3 for 3x3, 4 for 4x4, etc.): ";
-    cin >> _board_size;
-    while (_board_size < 3) {
-        cout << "\nInvalid board size. Please enter a number greater than or equal to 3: ";
-        cin >> _board_size;
-        if (_board_size >= 3) {
-            cout << endl;
-        }
-    }
-
-    // cout << _board_size << endl; // Debugging line to check win count input
-    setBoardSize();
-    setBoardSep();
-
-    cout << "Select win count greater than 2 and less or equal to board size: ";
-    cin >> _win_count;
-    bool incorrect = _win_count < 3 || _win_count > _board_size;
-    while (incorrect) {
-        if(_win_count < 3) {
-            cout << "\nInvalid win count. Please enter a number greater than 2: ";
-            cin >> _win_count;
-        } else if (_win_count > _board_size) {
-            cout << "\nInvalid win count. Please enter a number less or equal board size: ";
-            cin >> _win_count;
-        } else {
-            incorrect = false;
-            cout << endl;
-
-        }
-    }
-
-    // cout << _win_count << endl; // Debugging line to check win count input
-
-    cout << "Select your symbol (0 = X or 1 = O): ";
-    cin >> player_choice;
-    cout << endl;
-
-    auto result = setSymbols(player_choice);
-    while (!result) {
-        cerr << result.error() << endl;
-        cout << "Select your symbol (0 = X or 1 = O): " << endl;
-        cin >> player_choice;
-        auto result = setSymbols(player_choice);
-    }
-
-    cout << "You selected: " << _symbols[1] << endl;
+    string input;
 
     while (_running) {
+        bool loop = true;
 
-        render();
-        vector<bool>& player = _players_turn ? _player1 : _player2;
+        int player_choice;
 
-        
-        expected<int, string> result = player_move(player);
-        if (!result) {
-            cout << result.error() << endl;
-            result = player_move(player);
+        cout << _move_sep << endl;
+        cout << "Welcome to Tic Tac Toe!" << endl;
+        cout << "Enter your move by writing row and column where you wanna place your piece." << endl;
+        cout << _move_sep << endl;
+
+        // Initialize the game board and player vectors
+        cout << "Select board dimension (3(Default) for 3x3, 4 for 4x4, etc.): ";
+        getline(cin, input);
+
+        if (input.empty()) {
+            _board_size = 3; // Default to 3 if no input
+        } else {
+            try {
+                _board_size = stoi(input);
+            } catch (const invalid_argument&) {
+                cerr << "Invalid input. Defaulting to 3." << endl;
+                _board_size = 3;
+            }
+        }
+        while (_board_size < 3) {
+            cout << "Invalid board size. Please enter a number greater than or equal to 3: ";
+            getline(cin, input);
+            try {
+                _board_size = stoi(input);
+            } catch (const invalid_argument&) {
+                _board_size = 0; // Force another iteration
+            }
         }
 
-        
-        // Check for win condition here (not implemented in this snippet)
-        cout << player[result.value()] << endl; // Debugging line to check if the position is set correctly
-        _running = checkBoard(result.value(), player);
-        
+        // cout << _board_size << endl; // Debugging line to check win count input
+        setBoardSize();
+        setBoardSep();
 
-        swapPlayers();
-    
         
-    }
-    render();
-    
-    cout << "Game Ended." << endl;
+        cout << "Select win count greater than 2 and less or equal to " << _board_size << "(Default): ";
+        getline(cin, input);
+
+        if (input.empty()) {
+            _win_count = _board_size; // Default to 3 if no input
+        } else {
+            try {
+                _win_count = stoi(input);
+            } catch (const invalid_argument&) {
+                cerr << "Invalid input. Defaulting to " << _board_size << "." << endl;
+                _win_count = _board_size;
+            }
+        }
+
+        bool incorrect = _win_count < 3 || _win_count > _board_size;
+        while (incorrect) {
+            if(_win_count < 3) {
+                cout << "Invalid win count. Please enter a number greater than 2: ";
+                getline(cin, input);
+                try {
+                    _win_count = stoi(input);
+                } catch (const invalid_argument&) {
+                    _win_count = 0; // Force another iteration
+                }
+            } else if (_win_count > _board_size) {
+                cout << "Invalid win count. Please enter a number less or equal " << _board_size << ": ";
+                getline(cin, input);
+                try {
+                    _win_count = stoi(input);
+                } catch (const invalid_argument&) {
+                    _win_count = _board_size + 1; // Force another iteration
+                }
+            } else {
+                incorrect = false;
+            }
+            incorrect = _win_count < 3 || _win_count > _board_size;
+        }
+
+
+        // cout << _win_count << endl; // Debugging line to check win count input
+
+        cout << "Select your symbol (0(default) = X or 1 = O): ";
+        getline(cin, input);
+        
+        if (input.empty()) {
+            player_choice = 0; // Default to 0 if no input
+        } else {
+            try {
+                player_choice = stoi(input);
+            } catch (const invalid_argument&) {
+                cerr << "Invalid input. Defaulting to 0." << endl;
+                player_choice = 0;
+            }
+        }
+
+        auto result = setSymbols(player_choice);
+        while (!result) {
+            cerr << result.error() << endl;
+            cout << "Select your symbol (0 = X or 1 = O): ";
+            string input;
+            getline(cin, input);
+            try {
+                player_choice = stoi(input);
+            } catch (const invalid_argument&) {
+                player_choice = -1; // Invalid to force another iteration
+            }
+            result = setSymbols(player_choice);
+        }
+        cout << "You selected: " << _symbols[1] << endl;
+
+        while (loop) {
+
+            render();
+            vector<bool>& player = _players_turn ? _player1 : _player2;
+
+            
+            expected<int, string> result = player_move(player);
+            if (!result) {
+                cout << result.error() << endl;
+                result = player_move(player);
+            }
+
+            
+            // Check for win condition here (not implemented in this snippet)
+            cout << player[result.value()] << endl; // Debugging line to check if the position is set correctly
+            loop = checkBoard(result.value(), player);
+            
+
+            swapPlayers();
+        
+            
+        }
+        render();
+
+        cout << "New game? (Y/n): ";
+        string input;
+        getline(cin, input);
+        
+        // Default to 'Y' if input is empty, otherwise check first character
+        if (!input.empty() && (input[0] == 'n' || input[0] == 'N')) {
+            _running = false; // Exit the game loop
+        } else {
+            _players_turn = true; // Reset to player 1's turn
+            // board reset not needed because setting board size and symbols will reset the game state
+        }
+    }   
+
 }
 
 
@@ -183,12 +253,17 @@ bool Game::shouldBreak(int new_row, int new_col, int* count, vector<bool>& playe
 
 
 expected<int, string> Game::player_move(vector<bool>& player) {
-    int r,c;
+    int r, c;
 
-    cout << "\"" << _symbols[_players_turn ? 1 : 2] << "\" choose position:";
-    cin >> r;
-    cin >> c;
-    cout << endl;
+    cout << "\"" << _symbols[_players_turn ? 1 : 2] << "\" choose position (row col): ";
+    string input;
+    getline(cin, input);
+    
+    // Parse row and column from input
+    istringstream iss(input);
+    if (!(iss >> r >> c)) {
+        return unexpected("Invalid input format. Please enter row and column separated by space.");
+    }
 
     if (c < 1 || r < 1 || c > _board_size || r > _board_size) {
         return unexpected("Invalid position. Please choose a number between 1 and " + to_string(_board_size) + ".");
@@ -205,7 +280,7 @@ expected<int, string> Game::player_move(vector<bool>& player) {
     }
     
     // Place the symbol
-    player[index] = 1;
+    player[index] = true;
     return index;
 }
 
@@ -259,7 +334,12 @@ expected<void, string> Game::setSymbols(int player_choice) {
 void Game::setBoardSize() {
     _player1.resize(_board_size * _board_size, 0);
     _player2.resize(_board_size * _board_size, 0);
-    // _board.resize(_board_size * _board_size, 0); // Initialize all cells to empty
+
+    // if board already correct size reset it
+    if (_player1.size() == _board_size * _board_size) {
+        _player1.assign(_board_size * _board_size, 0);
+        _player2.assign(_board_size * _board_size, 0);
+    }
 }
 
 void Game::swapPlayers() {

@@ -24,7 +24,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # Configure different build types
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -Wall -Wextra")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -s")
 
 # Include directories
 include_directories(${CMAKE_SOURCE_DIR}/include)
@@ -110,8 +110,15 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_compile_options(${PROJECT_NAME} PRIVATE
         -Wall -Wextra -Wpedantic
         $<$<CONFIG:Debug>:-g -O0>
-        $<$<CONFIG:Release>:-O3>
+        $<$<CONFIG:Release>:-O3 -s>
     )
+    # Add size optimization flags for release
+    target_link_options(${PROJECT_NAME} PRIVATE
+        $<$<CONFIG:Release>:-s -Wl,--gc-sections>
+    )
+    
+    # Static linking for self-contained executable
+    target_link_options(${PROJECT_NAME} PRIVATE $<$<CONFIG:Release>:-static-libgcc -static-libstdc++>)
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(${PROJECT_NAME} PRIVATE
         /W4
@@ -128,7 +135,12 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 )
 
 # Link libraries
-target_link_libraries(${PROJECT_NAME} PRIVATE ${SOKOL_LIBS})
+if(EXISTS "${CMAKE_SOURCE_DIR}/libs/sokol")
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${SOKOL_LIBS})
+    message(STATUS "Linking Sokol platform libraries: ${SOKOL_LIBS}")
+else()
+    message(STATUS "Sokol not found - skipping platform library linking")
+endif()
 
 # Additional libraries can be added here as needed
 # target_link_libraries(${PROJECT_NAME} PRIVATE additional_library)
