@@ -118,7 +118,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     )
     
     # Static linking for self-contained executable
-    target_link_options(${PROJECT_NAME} PRIVATE $<$<CONFIG:Release>:-static-libgcc -static-libstdc++>)
+    target_link_options(${PROJECT_NAME} PRIVATE $<$<CONFIG:Release>:-static-libgcc -static-libstdc++ -static>)
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(${PROJECT_NAME} PRIVATE
         /W4

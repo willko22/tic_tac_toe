@@ -18,6 +18,7 @@ private:
     char _symbols[3] = {' ', 'X', 'O'}; // Default player symbols
     bool _players_turn = true; // Track whose turn it is
     // vector<int> _board; // Dynamic board that resizes based on _board_size
+    bool _with_ai = true; // Flag to indicate if AI is playing
     vector<bool> _player1;
     vector<bool> _player2;
 
@@ -29,6 +30,7 @@ private:
     void render();
     bool checkBoard(int index, vector<bool>& player);
     bool shouldBreak(int new_row, int new_col, int* count, vector<bool>& player);
+    int ai_turn()   ; // Placeholder for AI logic
     
     void cleanup();
     
