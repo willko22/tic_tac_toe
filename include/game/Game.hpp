@@ -3,7 +3,6 @@
 #include <vector>
 #include <expected>
 
-using namespace std;
 
 class Game {
 public:
@@ -19,24 +18,33 @@ private:
     bool _players_turn = true; // Track whose turn it is
     // vector<int> _board; // Dynamic board that resizes based on _board_size
     bool _with_ai = true; // Flag to indicate if AI is playing
-    vector<bool> _player1;
-    vector<bool> _player2;
+    int _last_move = -1; // Track the last move made
+    std::vector<bool> _player1;
+    std::vector<bool> _player2;
+    std::vector<bool> _board; // Board state
+    std::vector<bool> _ai_board; // AI gets only part of board for minimax
+    int _ai_size = 0; // Size of the AI board
+    int _ai_vector_size = 0; // Size of the AI vector
 
-    string _board_sep;
-    const string _move_sep = string(20, '=');
+    std::string _board_sep;
+    const std::string _move_sep = std::string(20, '=');
 
     void initialize();
-    expected<int, string> player_move(vector<bool>& player);
+    std::expected<int, std::string> playerMove(std::vector<bool>& player);
     void render();
-    bool checkBoard(int index, vector<bool>& player);
-    bool shouldBreak(int new_row, int new_col, int* count, vector<bool>& player);
-    int ai_turn()   ; // Placeholder for AI logic
+    int checkBoard(int index, std::vector<bool>& player);
+    int aiTurn()   ; // Placeholder for AI logic
+    int minimax(int depth, bool maximizingPlayer, int last_move); // , int alpha, int beta later for alpha-beta pruning
+    void placePiece(int index, std::vector<bool>& player, bool remove = false);
+    int evaluatePosition(); // Evaluate the current board position for AI
+    void populateAIBoard(); // Populate AI board based on the current game state
+    int convertAIIndexToMainBoard(int ai_index); // Convert AI board index to main board index
     
     void cleanup();
     
     // Private helper functions
     void setBoardSep();
-    expected<void, string> setSymbols(int player_choice);
+    std::expected<void, std::string> setSymbols(int player_choice);
     void setBoardSize();
     void swapPlayers();
     
