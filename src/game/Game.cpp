@@ -82,14 +82,8 @@ void Game::run() {
 
 
 int Game::aiTurn() {
-    
-
-    // _ai_board.assign(_ai_vector_size, 0); // Reset AI board
-    // populate _ai_board with data from _board in distance of _ai_size... centered on the last move
-    
-    populateAIBoard();
-
-    auto available_moves = _ai_board 
+    // Get all available moves from the main board
+    auto available_moves = _board 
         | views::enumerate 
         | views::filter([](auto&& pair) { return !get<1>(pair); })
         | views::transform([](auto&& pair) { return static_cast<int>(get<0>(pair)); })
@@ -98,38 +92,24 @@ int Game::aiTurn() {
     
     vector<int> best_moves = {};
     int best_score = INT_MIN;
-    for (int ai_move : available_moves) {
-        // Convert AI board index to main board index
-        int main_board_move = convertAIIndexToMainBoard(ai_move);
-        
-        // Skip invalid moves (out of bounds)
-        if (main_board_move == -1) {
-            continue;
-        }
-        
-        placePiece(main_board_move, _player2); // AI's turn
-        int score = minimax(_win_count, false, main_board_move);  // After AI moves, it's human's turn (false)
-        placePiece(main_board_move, _player2, true); // Undo AI's move
+    
+    for (int move : available_moves) {
+        placePiece(move, _player2); // AI's turn
+        int score = minimax(_board_size * 2, false, move);  // Use depth 5 instead of _win_count for better performance
+        placePiece(move, _player2, true); // Undo AI's move
         
         if (score > best_score) { // AI wants to maximize score
             best_score = score; // Update best score
-            best_moves = {main_board_move}; // Track the best move
+            best_moves = {move}; // Track the best move
         } else if (score == best_score) {
-            best_moves.push_back(main_board_move); // If score is equal, add to best moves
+            best_moves.push_back(move); // If score is equal, add to best moves
         }
-
     }
 
     // Select random move from best moves for variety
     int best_move = best_moves[rand() % best_moves.size()];
 
     placePiece(best_move, _player2); // AI places its symbol
-    
-    // DEBUG: Show actual vs expected
-    cout << "DEBUG: AI chose index " << best_move << " -> (" << (best_move / _board_size) << "," << (best_move % _board_size) << ")" << endl;
-    
-    // Placeholder for AI logic, which should return an index
-    cout << "AI placed its symbol at position: " << (best_move / _board_size + 1) << " " << (best_move % _board_size + 1) << endl;
 
     return best_move;
 }
@@ -145,17 +125,17 @@ int Game::minimax(int depth, bool maximizingPlayer, int last_move){
     // Check for terminal states first (win/tie)
     if (last_move != -1) {  // Only check if there was a last move
         // The player who made the last move is the opposite of the current player
-        // If maximizingPlayer is true, then the last move was made by the minimizing player (human)
-        // If maximizingPlayer is false, then the last move was made by the maximizing player (AI)
+        // If maximizingPlayer is true (AI's turn to move), then the last move was made by human (_player1)
+        // If maximizingPlayer is false (human's turn to move), then the last move was made by AI (_player2)
         vector<bool>& last_player = maximizingPlayer ? _player1 : _player2;
         int check_result = checkBoard(last_move, last_player);
         
         if (check_result == 2) {
             return 0;  // Tie
         } else if (check_result == 1) {
-            // If last move was by AI (_player2) and AI won, return positive score
-            // If last move was by human (_player1) and human won, return negative score
-            return maximizingPlayer ? -10 : 10;
+            // If human won (last_player is _player1), return negative score for AI
+            // If AI won (last_player is _player2), return positive score for AI
+            return maximizingPlayer ? -10 : 10; // AI loses if human won, AI wins if AI won
         }
     }
 
@@ -163,50 +143,33 @@ int Game::minimax(int depth, bool maximizingPlayer, int last_move){
         return evaluatePosition(); // Evaluate current position
     }
 
-    
-    // Use AI board for optimization - only search within the cropped area!
-    auto available_moves = _ai_board 
+    // Get all available moves from the main board
+    auto available_moves = _board 
         | views::enumerate 
         | views::filter([](auto&& pair) { return !get<1>(pair); })
         | views::transform([](auto&& pair) { return static_cast<int>(get<0>(pair)); })
         | ranges::to<vector<int>>();
 
+    // No moves available - this is a tie
+    if (available_moves.empty()) {
+        return 0;
+    }
 
     int best_score = maximizingPlayer ? INT_MIN : INT_MAX;
     
-    for (int ai_move : available_moves) {
-        // Convert AI board index to main board index for actual placement
-        int main_move = convertAIIndexToMainBoard(ai_move);
-        
-        // Place the piece for the current player
+    for (int move : available_moves) {
         if (maximizingPlayer) {
-            placePiece(main_move, _player2); // AI's turn
-            // Update AI board after move
-            _ai_board[ai_move] = true; // Mark AI board position as occupied
+            placePiece(move, _player2); // AI's turn
+            int score = minimax(depth - 1, false, move);
+            placePiece(move, _player2, true); // Undo AI's move
             
-            int score = minimax(depth - 1, false, main_move);
-            
-            placePiece(main_move, _player2, true); // Undo AI's move
-            // Undo AI board update
-            _ai_board[ai_move] = false; // Mark AI board position as unoccupied
-            
-            if (score > best_score) { // AI wants to maximize score
-                best_score = score; // Update best score
-            }
+            best_score = max(score, best_score); // Update best score
         } else {
-            placePiece(main_move, _player1); // Human's turn
-            // Update AI board after move
-            _ai_board[ai_move] = true; // Mark AI board position as occupied
+            placePiece(move, _player1); // Human's turn 
+            int score = minimax(depth - 1, true, move);
+            placePiece(move, _player1, true); // Undo human's move
             
-            int score = minimax(depth - 1, true, main_move);
-            
-            placePiece(main_move, _player1, true); // Undo human's move
-            // Undo AI board update
-            _ai_board[ai_move] = false; // Mark AI board position as unoccupied
-            
-            if (score < best_score) { // Human wants to minimize score
-                best_score = score; // Update best score
-            }
+            best_score = min(score, best_score); // Update best score
         }
     }
 
@@ -216,13 +179,13 @@ int Game::minimax(int depth, bool maximizingPlayer, int last_move){
 
 int Game::evaluatePosition() {
     // Simple evaluation function for non-terminal positions
-    // You can make this more sophisticated later
-    
-    // For now, return 0 (neutral) for ongoing games at depth limit
-    // Later you could add heuristics like:
-    // - Count potential winning lines
-    // - Evaluate center control
-    // - Check for threats/opportunities
+    // Count potential winning lines for both players
+
+    // For now, prefer center positions slightly
+    int center = (_board_size * _board_size) / 2;
+    if (!_board[center]) {
+        return 1; // Slight preference for center
+    }
     
     return 0; // Neutral position
 }
@@ -325,10 +288,6 @@ void Game::initialize() {
     }
     // cout << _win_count << endl; // Debugging line to check win count input
 
-    _ai_size = oddifyMinMax(_win_count + 1, 3, _board_size);
-    _ai_vector_size = _ai_size * _ai_size; // Set AI board size based on win count
-    _ai_board.resize(_ai_vector_size, 0); // Initialize AI board
-
 
     cout << "Select your symbol (0(default) = X or 1 = O): ";
     getline(cin, input);
@@ -359,66 +318,6 @@ void Game::initialize() {
     }
     cout << "You selected: " << _symbols[1] << endl;
 
-}
-
-
-void Game::populateAIBoard() {
-    _ai_board.assign(_ai_vector_size, false); // Reset AI board
-    
-    // Get the center position of the last move
-    int center_row = _last_move / _board_size;
-    int center_col = _last_move % _board_size;
-    
-    // Calculate starting position to center the AI board on the last move
-    // This can go negative or beyond board boundaries - that's intentional!
-    int start_row = center_row - _ai_size / 2;
-    int start_col = center_col - _ai_size / 2;
-    
-    for (int i = 0; i < _ai_size; ++i) {
-        for (int j = 0; j < _ai_size; ++j) {
-            int main_row = start_row + i;
-            int main_col = start_col + j;
-            int ai_index = i * _ai_size + j;
-            
-            // Check if this position is within the main board boundaries
-            if (main_row >= 0 && main_row < _board_size && 
-                main_col >= 0 && main_col < _board_size) {
-                // Within bounds - copy the actual board state
-                int main_index = main_row * _board_size + main_col;
-                _ai_board[ai_index] = _board[main_index];
-            } else {
-                // Out of bounds - mark as occupied (can't place pieces here)
-                _ai_board[ai_index] = true;
-            }
-        }
-    }
-}
-
-
-int Game::convertAIIndexToMainBoard(int ai_index) {
-    // Convert AI board index to AI board coordinates
-    int ai_row = ai_index / _ai_size;
-    int ai_col = ai_index % _ai_size;
-    
-    // Calculate the center position of the last move
-    int center_row = _last_move / _board_size;
-    int center_col = _last_move % _board_size;
-    
-    // Calculate starting position (same logic as populateAIBoard)
-    int start_row = center_row - _ai_size / 2;
-    int start_col = center_col - _ai_size / 2;
-    
-    // Convert to main board coordinates
-    int main_row = start_row + ai_row;
-    int main_col = start_col + ai_col;
-    
-    // Validate bounds before converting to index
-    if (main_row < 0 || main_row >= _board_size || main_col < 0 || main_col >= _board_size) {
-        return -1; // Invalid index
-    }
-    
-    // Convert to main board index
-    return main_row * _board_size + main_col;
 }
 
 
