@@ -12,186 +12,272 @@
 using namespace std;
 
 Game::Game() : _running(false) {}
-Game::~Game() {
+Game::~Game()
+{
     cleanup();
 }
 
-
-void Game::run() {
+void Game::run()
+{
 
     _running = true;
 
-    while (_running) {
+    while (_running)
+    {
 
         initialize();
 
         bool loop = true;
-        while (loop) {
+        while (loop)
+        {
 
             render();
-            vector<bool>& player = _players_turn ? _player1 : _player2;
+            vector<bool> &player = _players_turn ? _player1 : _player2;
 
-            if (_with_ai && !_players_turn) {
+            if (_with_ai && !_players_turn)
+            {
                 // AI move logic (not implemented in this snippet)
                 cout << "AI is making a move..." << endl;
-                _last_move =  aiTurn();
-            } else {
+                _last_move = aiTurn();
+            }
+            else
+            {
 
                 expected<int, string> result = playerMove(player);
-                if (!result) {
+                if (!result)
+                {
                     cout << result.error() << endl;
                     result = playerMove(player);
                 }
                 // Check for win condition here (not implemented in this snippet)
                 // cout << player[result.value()] << endl; // Debugging line to check if the position is set correctly
                 _last_move = result.value();
-
             }
 
             int check = checkBoard(_last_move, player);
             // cout << "Check result: " << check << endl; // Debugging line to check the result of checkBoard
-            if (check == 1) {
+            if (check == 1)
+            {
                 cout << "Player " << _symbols[_players_turn ? 1 : 2] << " wins!" << endl;
                 loop = false; // End the game loop
-            } else if (check == 2) {
+            }
+            else if (check == 2)
+            {
                 cout << "It's a tie!" << endl;
                 loop = false; // End the game loop
             }
 
             swapPlayers();
-        
-            
         }
-        
+
         render();
 
         cout << "New game? (Y/n): ";
         string input;
         getline(cin, input);
-        
+
         // Default to 'Y' if input is empty, otherwise check first character
-        if (!input.empty() && (input[0] == 'n' || input[0] == 'N')) {
+        if (!input.empty() && (input[0] == 'n' || input[0] == 'N'))
+        {
             _running = false; // Exit the game loop
-        } else {
+        }
+        else
+        {
             _players_turn = true; // Reset to player 1's turn
             // board reset not needed because setting board size and symbols will reset the game state
         }
-    }   
+    }
+}
+
+vector<int> Game::getAvailableMoves(const bool player_turn, const int last_move)
+{
+
+    vector<int> available_moves;
+    available_moves.reserve(_board_size * _board_size);
+
+    vector<int> already_in;
+    already_in.resize(_board_size * _board_size, false); // Reserve space for already checked positions
+    const vector<bool> &current_player = player_turn ? _player1 : _player2;
+    const vector<bool> &enemy_player = player_turn ? _player2 : _player1;
+
+    // get indexes around last move based on directions
+    for (const int adj_index : _adjuscent_map[last_move])
+    {
+        if (!_board[adj_index])
+        {                                 // If the position is empty
+            already_in[adj_index] = true; // Add to set to avoid duplicates
+            available_moves.push_back(adj_index);
+        }
+    }
+
+    // get indexes around enemy_player pieces
+    for (const auto &[position, adjacent_indices] : _adjuscent_map)
+    {
+        if (enemy_player[position])
+        { // If this position is occupied by enemy
+            for (const int adj_index : adjacent_indices)
+            {
+                if (!_board[adj_index] && already_in[adj_index] == false)
+                {
+                    already_in[adj_index] = true;
+                    available_moves.push_back(adj_index);
+                }
+            }
+        }
+    }
+
+    // get indexes around current_player pieces
+    for (const auto &[position, adjacent_indices] : _adjuscent_map)
+    {
+        if (current_player[position])
+        { // If this position is occupied by enemy
+            for (const int adj_index : adjacent_indices)
+            {
+                if (!_board[adj_index] && already_in[adj_index] == false)
+                {
+                    already_in[adj_index] = true;
+                    available_moves.push_back(adj_index);
+                }
+            }
+        }
+    }
+
+
+    
+
+    return available_moves;
 
 }
 
-
-int Game::aiTurn() {
+int Game::aiTurn()
+{
     // Get all available moves from the main board
-    auto available_moves = _board 
-        | views::enumerate 
-        | views::filter([](auto&& pair) { return !get<1>(pair); })
-        | views::transform([](auto&& pair) { return static_cast<int>(get<0>(pair)); })
-        | ranges::to<vector<int>>();
+    auto start_time = chrono::high_resolution_clock::now();
 
-    
+
+    vector<int> available_moves = getAvailableMoves(false, _last_move);
     vector<int> best_moves = {};
     int best_score = INT_MIN;
-    
-    for (int move : available_moves) {
+
+    // int depth = (available_moves.size() + 1) / 2; // Limit depth to available moves or 5
+    int depth = _win_count + 2;
+    cout << "depth: " << depth << endl;
+
+    for (int move : available_moves)
+    {
         placePiece(move, _player2); // AI's turn
-        int score = minimax(_board_size * 2, false, move);  // Use depth 5 instead of _win_count for better performance
+        int score = minimax(depth, false, move, INT_MIN, INT_MAX);
         placePiece(move, _player2, true); // Undo AI's move
-        
-        if (score > best_score) { // AI wants to maximize score
-            best_score = score; // Update best score
+
+        if (score > best_score)
+        {                        // AI wants to maximize score
+            best_score = score;  // Update best score
             best_moves = {move}; // Track the best move
-        } else if (score == best_score) {
+        }
+        else if (score == best_score)
+        {
             best_moves.push_back(move); // If score is equal, add to best moves
         }
     }
 
     // Select random move from best moves for variety
+    cout << "found best moves: " << best_moves.size() << endl;
     int best_move = best_moves[rand() % best_moves.size()];
-
     placePiece(best_move, _player2); // AI places its symbol
+
+
+    auto end_time = chrono::high_resolution_clock::now();
+    auto duration = chrono::duration_cast<chrono::milliseconds>(end_time - start_time);
+    cout << "getAvailableMoves | " << duration.count() << " ms " << endl;
+
 
     return best_move;
 }
 
-
-void Game::placePiece(int index, vector<bool>& player, bool remove) {
+void Game::placePiece(int index, vector<bool> &player, bool remove)
+{
     player[index] = !remove; // Place the piece for the current player
     _board[index] = !remove; // Update the board state
 }
 
-
-int Game::minimax(int depth, bool maximizingPlayer, int last_move){
+int Game::minimax(int depth, bool maximizingPlayer, int last_move, int alpha, int beta)
+{
     // Check for terminal states first (win/tie)
-    if (last_move != -1) {  // Only check if there was a last move
-        // The player who made the last move is the opposite of the current player
-        // If maximizingPlayer is true (AI's turn to move), then the last move was made by human (_player1)
-        // If maximizingPlayer is false (human's turn to move), then the last move was made by AI (_player2)
-        vector<bool>& last_player = maximizingPlayer ? _player1 : _player2;
-        int check_result = checkBoard(last_move, last_player);
-        
-        if (check_result == 2) {
-            return 0;  // Tie
-        } else if (check_result == 1) {
-            // If human won (last_player is _player1), return negative score for AI
-            // If AI won (last_player is _player2), return positive score for AI
-            return maximizingPlayer ? -10 : 10; // AI loses if human won, AI wins if AI won
-        }
+    // The player who made the last move is the opposite of the current player
+    // If maximizingPlayer is true (AI's turn to move), then the last move was made by human (_player1)
+    // If maximizingPlayer is false (human's turn to move), then the last move was made by AI (_player2)
+    const vector<bool> &last_player = maximizingPlayer ? _player1 : _player2;
+    const int check_result = checkBoard(last_move, last_player);
+
+    if (check_result == 2)
+    {
+        return 0; // Tie
+    }
+    else if (check_result == 1)
+    {
+        // If human won (last_player is _player1), return negative score for AI
+        // If AI won (last_player is _player2), return positive score for AI
+        return maximizingPlayer ? -10 - depth : 10 + depth; // AI loses if human won, AI wins if AI won
     }
 
-    if (depth == 0) {
-        return evaluatePosition(); // Evaluate current position
+    if (depth == 0)
+    {
+        return 0; // Evaluate current position
     }
 
     // Get all available moves from the main board
-    auto available_moves = _board 
-        | views::enumerate 
-        | views::filter([](auto&& pair) { return !get<1>(pair); })
-        | views::transform([](auto&& pair) { return static_cast<int>(get<0>(pair)); })
-        | ranges::to<vector<int>>();
+    // vector<int> available_moves;
+    // available_moves.reserve(_board_size * _board_size);
+    // for (int i = 0; i < _board_size * _board_size; ++i) {
+    //     if (!_board[i]) {
+    //         available_moves.push_back(i);
+    //     }
+    // }
 
     // No moves available - this is a tie
-    if (available_moves.empty()) {
+
+    int best_score = maximizingPlayer ? INT_MIN : INT_MAX;
+    const bool next_maximizingPlayer = !maximizingPlayer; // Toggle player for next move
+    vector<bool> &current_player = maximizingPlayer ? _player2 : _player1;
+    vector<int> available_moves = getAvailableMoves(next_maximizingPlayer, last_move);
+    if (available_moves.empty())
+    {
         return 0;
     }
 
-    int best_score = maximizingPlayer ? INT_MIN : INT_MAX;
-    
-    for (int move : available_moves) {
-        if (maximizingPlayer) {
-            placePiece(move, _player2); // AI's turn
-            int score = minimax(depth - 1, false, move);
-            placePiece(move, _player2, true); // Undo AI's move
-            
-            best_score = max(score, best_score); // Update best score
-        } else {
-            placePiece(move, _player1); // Human's turn 
-            int score = minimax(depth - 1, true, move);
-            placePiece(move, _player1, true); // Undo human's move
-            
-            best_score = min(score, best_score); // Update best score
+    for (int move : available_moves)
+    {
+
+        placePiece(move, current_player); // AI's turn
+        int score = minimax(depth - 1, next_maximizingPlayer, move, alpha, beta);
+        placePiece(move, current_player, true); // Undo AI's move
+
+        if (maximizingPlayer)
+        {
+            if (score > best_score)
+            {
+                best_score = score;
+                alpha = score;
+            }
         }
+        else
+        {
+            if (score < best_score)
+            {
+                best_score = score;
+                beta = score;
+            }
+        }
+
+        if (beta <= alpha)
+            break; // Beta cut-off
     }
 
     return best_score;
 }
 
-
-int Game::evaluatePosition() {
-    // Simple evaluation function for non-terminal positions
-    // Count potential winning lines for both players
-
-    // For now, prefer center positions slightly
-    int center = (_board_size * _board_size) / 2;
-    if (!_board[center]) {
-        return 1; // Slight preference for center
-    }
-    
-    return 0; // Neutral position
-}
-
-
-void Game::initialize() {
+void Game::initialize()
+{
     string input;
 
     int player_choice;
@@ -205,17 +291,24 @@ void Game::initialize() {
     cout << "Against player or AI? (0 = player, 1 = AI): ";
     getline(cin, input);
 
-    if (!input.empty()) {
-        try {
+    if (!input.empty())
+    {
+        try
+        {
             _with_ai = stoi(input);
-        } catch (const invalid_argument&) {
+        }
+        catch (const invalid_argument &)
+        {
             cerr << "Invalid input. Defaulting to AI." << endl;
         }
     }
-    
-    if (_with_ai) {
+
+    if (_with_ai)
+    {
         cout << "You are playing against AI." << endl;
-    } else {
+    }
+    else
+    {
         cout << "You are playing against local player." << endl;
     }
 
@@ -223,225 +316,288 @@ void Game::initialize() {
     cout << "Select board dimension (3(Default) for 3x3, 4 for 4x4, etc.): ";
     getline(cin, input);
 
-    if (input.empty()) {
+    if (input.empty())
+    {
         _board_size = 3; // Default to 3 if no input
-    } else {
-        try {
+    }
+    else
+    {
+        try
+        {
             _board_size = stoi(input);
-        } catch (const invalid_argument&) {
+        }
+        catch (const invalid_argument &)
+        {
             cerr << "Invalid input. Defaulting to 3." << endl;
             _board_size = 3;
         }
     }
-    while (_board_size < 3) {
+    while (_board_size < 3)
+    {
         cout << "Invalid board size. Please enter a number greater than or equal to 3: ";
         getline(cin, input);
-        try {
+        try
+        {
             _board_size = stoi(input);
-        } catch (const invalid_argument&) {
+        }
+        catch (const invalid_argument &)
+        {
             _board_size = 0; // Force another iteration
         }
     }
-
 
     // cout << _board_size << endl; // Debugging line to check win count input
     setBoardSize();
     setBoardSep();
 
- // #### Set win count
+    // #### Set win count
     cout << "Select win count greater than 2 and less or equal to " << _board_size << "(Default): ";
     getline(cin, input);
 
-    if (input.empty()) {
+    if (input.empty())
+    {
         _win_count = _board_size; // Default to 3 if no input
-    } else {
-        try {
+    }
+    else
+    {
+        try
+        {
             _win_count = stoi(input);
-        } catch (const invalid_argument&) {
+        }
+        catch (const invalid_argument &)
+        {
             cerr << "Invalid input. Defaulting to " << _board_size << "." << endl;
             _win_count = _board_size;
         }
     }
 
     bool incorrect = _win_count < 3 || _win_count > _board_size;
-    while (incorrect) {
-        if(_win_count < 3) {
+    while (incorrect)
+    {
+        if (_win_count < 3)
+        {
             cout << "Invalid win count. Please enter a number greater than 2: ";
             getline(cin, input);
-            try {
+            try
+            {
                 _win_count = stoi(input);
-            } catch (const invalid_argument&) {
+            }
+            catch (const invalid_argument &)
+            {
                 _win_count = 0; // Force another iteration
             }
-        } else if (_win_count > _board_size) {
+        }
+        else if (_win_count > _board_size)
+        {
             cout << "Invalid win count. Please enter a number less or equal " << _board_size << ": ";
             getline(cin, input);
-            try {
+            try
+            {
                 _win_count = stoi(input);
-            } catch (const invalid_argument&) {
+            }
+            catch (const invalid_argument &)
+            {
                 _win_count = _board_size + 1; // Force another iteration
             }
-        } else {
+        }
+        else
+        {
             incorrect = false;
         }
         incorrect = _win_count < 3 || _win_count > _board_size;
     }
     // cout << _win_count << endl; // Debugging line to check win count input
 
-
     cout << "Select your symbol (0(default) = X or 1 = O): ";
     getline(cin, input);
-    
-    if (input.empty()) {
+
+    if (input.empty())
+    {
         player_choice = 0; // Default to 0 if no input
-    } else {
-        try {
+    }
+    else
+    {
+        try
+        {
             player_choice = stoi(input);
-        } catch (const invalid_argument&) {
+        }
+        catch (const invalid_argument &)
+        {
             cerr << "Invalid input. Defaulting to 0." << endl;
             player_choice = 0;
         }
     }
 
     auto result = setSymbols(player_choice);
-    while (!result) {
+    while (!result)
+    {
         cerr << result.error() << endl;
         cout << "Select your symbol (0 = X or 1 = O): ";
         string input;
         getline(cin, input);
-        try {
+        try
+        {
             player_choice = stoi(input);
-        } catch (const invalid_argument&) {
+        }
+        catch (const invalid_argument &)
+        {
             player_choice = -1; // Invalid to force another iteration
         }
         result = setSymbols(player_choice);
     }
     cout << "You selected: " << _symbols[1] << endl;
-
 }
 
+int Game::checkBoard(int index, const vector<bool> &player)
+{
 
-int Game::checkBoard(int index, vector<bool>& player) {
-    
     int row = index / _board_size;
     int col = index % _board_size;
     int check_index = index; // Initialize check_index to the current index
-    
+
     // Check all 4 directions from the placed piece
     int directions[4][2] = {
-        {0, 1},   // horizontal (→)
-        {1, 0},   // vertical (↓)
-        {1, 1},   // diagonal \ (↘)
-        {1, -1}   // diagonal / (↙)
+        {0, 1}, // horizontal (→)
+        {1, 0}, // vertical (↓)
+        {1, 1}, // diagonal \ (↘)
+        {1, -1} // diagonal / (↙)
     };
-    
-    for (int dir = 0; dir < 4; dir++) {
+
+    for (int dir = 0; dir < 4; dir++)
+    {
         int dr = directions[dir][0];
         int dc = directions[dir][1];
         int count = 1; // Count the current piece
 
         // Calculate boundary limits using branchless operations when possible
         int pos_limit, neg_limit;
-        if (dr == 0) {  // horizontal (→)
+        if (dr == 0)
+        { // horizontal (→)
             pos_limit = _board_size - col;
             neg_limit = col + 1;
-        } else if (dc == 0) {  // vertical (↓)
+        }
+        else if (dc == 0)
+        { // vertical (↓)
             pos_limit = _board_size - row;
             neg_limit = row + 1;
-        } else if (dc > 0) {  // diagonal (↘)
+        }
+        else if (dc > 0)
+        { // diagonal (↘)
             pos_limit = min(_board_size - row, _board_size - col);
             neg_limit = min(row + 1, col + 1);
-        } else {  // diagonal (↙)
+        }
+        else
+        { // diagonal (↙)
             pos_limit = min(_board_size - row, col + 1);
             neg_limit = min(row + 1, _board_size - col);
         }
-        
+
         int max_steps_pos = min(_win_count, pos_limit);
         int max_steps_neg = min(_win_count, neg_limit);
 
         // Check positive direction - simple and fast
-        for (int step = 1; step < max_steps_pos; step++) {
+        for (int step = 1; step < max_steps_pos; step++)
+        {
             check_index = (row + dr * step) * _board_size + (col + dc * step);
-            if (player[check_index]) {
+            if (player[check_index])
+            {
                 count++;
-            } else {
-                break; // Early exit on first empty/opponent piece
             }
-        }
-        
-        // Check negative direction - simple and fast
-        for (int step = 1; step < max_steps_neg; step++) {
-            check_index = (row - dr * step) * _board_size + (col - dc * step);
-            if (player[check_index]) {
-                count++;
-            } else {
+            else
+            {
                 break; // Early exit on first empty/opponent piece
             }
         }
 
-        
+        // Check negative direction - simple and fast
+        for (int step = 1; step < max_steps_neg; step++)
+        {
+            check_index = (row - dr * step) * _board_size + (col - dc * step);
+            if (player[check_index])
+            {
+                count++;
+            }
+            else
+            {
+                break; // Early exit on first empty/opponent piece
+            }
+        }
+
         // Check if we have enough in a row
-        if (count >= _win_count) {
+        if (count >= _win_count)
+        {
             return 1; // End game
         }
     }
-    
+
     // Check for tie (board full) - using ranges for clarity
-    if (ranges::all_of(_board, [](bool used) { return used; })) {
+    if (ranges::all_of(_board, [](bool used)
+                       { return used; }))
+    {
         return 2; // Tie condition, no empty spaces left
     }
-    
+
     return 0; // Game continues
 }
 
-
-expected<int, string> Game::playerMove(vector<bool>& player) {
+expected<int, string> Game::playerMove(vector<bool> &player)
+{
     int r, c;
 
     cout << "\"" << _symbols[_players_turn ? 1 : 2] << "\" choose position (row col): ";
     string input;
     getline(cin, input);
-    
+
     // Parse row and column from input
     istringstream iss(input);
-    if (!(iss >> r >> c)) {
+    if (!(iss >> r >> c))
+    {
         return unexpected("Invalid input format. Please enter row and column separated by space.");
     }
 
-    if (c < 1 || r < 1 || c > _board_size || r > _board_size) {
+    if (c < 1 || r < 1 || c > _board_size || r > _board_size)
+    {
         return unexpected("Invalid position. Please choose a numbers between 1 and " + to_string(_board_size) + ".");
     }
 
     c--; // Convert to 0-based index
     r--;
-    
+
     // Convert 2D coordinates to 1D index
     int index = r * _board_size + c;
-    
-    if (_board[index]) {
+
+    if (_board[index])
+    {
         return unexpected("Position already taken. Please choose another position.");
     }
-    
+
     // Place the symbol
     placePiece(index, player);
     return index;
 }
 
+void Game::render()
+{
 
-void Game::render() {
-
-    for (int i = 0; i < _board_size * _board_size; i++) {
+    for (int i = 0; i < _board_size * _board_size; i++)
+    {
         int player_ident = _player1[i] ? 1 : (_player2[i] ? 2 : 0);
         // cout << _player1[i] << player_ident << _player2[i];
         cout << " " << _symbols[player_ident] << " ";
-        if ((i + 1) % _board_size == 0) {
+        if ((i + 1) % _board_size == 0)
+        {
             cout << endl;
-            if (i < _board_size * _board_size - 1){
+            if (i < _board_size * _board_size - 1)
+            {
                 cout << _board_sep << endl;
-            } else {
+            }
+            else
+            {
                 cout << endl;
             }
-        } else {
+        }
+        else
+        {
             cout << "|";
         }
     }
@@ -449,28 +605,32 @@ void Game::render() {
     // Rendering code
 }
 
-
-void Game::cleanup() {
+void Game::cleanup()
+{
     cout << "Cleaning up..." << endl;
     // Cleanup resources - no need to delete _board as vector manages its own memory
 }
 
-
-void Game::setBoardSep() {
+void Game::setBoardSep()
+{
     _board_sep = string(_board_size * 4 - 1, '-');
 }
 
+expected<void, string> Game::setSymbols(int player_choice)
+{
 
-expected<void, string> Game::setSymbols(int player_choice) {
-
-    if (player_choice != 0 && player_choice != 1) {
+    if (player_choice != 0 && player_choice != 1)
+    {
         return unexpected("Invalid player choice, must be 0 or 1.");
     }
 
-    if (player_choice == 0) {
+    if (player_choice == 0)
+    {
         _symbols[1] = 'X';
         _symbols[2] = 'O';
-    } else if (player_choice == 1) {
+    }
+    else if (player_choice == 1)
+    {
         _symbols[1] = 'O';
         _symbols[2] = 'X';
     }
@@ -478,21 +638,53 @@ expected<void, string> Game::setSymbols(int player_choice) {
     return {};
 }
 
-
-void Game::setBoardSize() {
+void Game::setBoardSize()
+{
     _player1.resize(_board_size * _board_size, 0);
     _player2.resize(_board_size * _board_size, 0);
-    _board.resize(_board_size * _board_size, 0);  // Add this line!
+    _board.resize(_board_size * _board_size, 0); // Add this line!
 
     // if board already correct size reset it
-    if (_player1.size() == _board_size * _board_size) {
+    if (_player1.size() == _board_size * _board_size)
+    {
         _player1.assign(_board_size * _board_size, 0);
         _player2.assign(_board_size * _board_size, 0);
-        _board.assign(_board_size * _board_size, 0);  // Add this line too!
+        _board.assign(_board_size * _board_size, 0); // Add this line too!
     }
+
+    generateAdjuscentMap();
 }
 
-
-void Game::swapPlayers() {
+void Game::swapPlayers()
+{
     _players_turn = !_players_turn; // Toggle the player's turn
+}
+
+void Game::generateAdjuscentMap()
+{
+    const int directions[8][2] = {
+        {-1, -1}, {-1, 0}, {-1, 1}, {0, -1}, {0, 1}, {1, -1}, {1, 0}, {1, 1}};
+
+    _adjuscent_map.clear();
+
+    for (int i = 0; i < _board_size * _board_size; ++i)
+    {
+        int row = i / _board_size;
+        int col = i % _board_size;
+
+        for (const auto &[dr, dc] : directions)
+        {
+            int adj_row = row + dr;
+            int adj_col = col + dc;
+
+            // Check bounds
+            if (adj_row >= 0 && adj_row < _board_size &&
+                adj_col >= 0 && adj_col < _board_size)
+            {
+
+                int adj_index = adj_row * _board_size + adj_col;
+                _adjuscent_map[i].insert(adj_index);
+            }
+        }
+    }
 }
