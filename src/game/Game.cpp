@@ -12,7 +12,7 @@
 
 using namespace std;
 
-//########## CONSTRUCTORS/DESTRUCTORS ##########
+// ########## CONSTRUCTORS/DESTRUCTORS ##########
 
 Game::Game() : _running(false) {}
 
@@ -21,7 +21,7 @@ Game::~Game()
     cleanup();
 }
 
-//########## PUBLIC INTERFACE ##########
+// ########## PUBLIC INTERFACE ##########
 
 void Game::run()
 {
@@ -90,20 +90,29 @@ void Game::run()
     }
 }
 
-//########## AI METHODS ##########
+// ########## AI METHODS ##########
 
 int Game::aiTurn()
 {
     auto start_time = chrono::high_resolution_clock::now();
 
-    // reduce depth for larger boards to maintain performance
-    int depth = min(_win_count + 2, 8); // cap depth at 8 for performance
-    if (_board_size >= 8) depth = min(depth, 6);
-    if (_board_size >= 10) depth = min(depth, 4);
-    
-    _hash_threshold = _win_count - 3;
+    int move_count = _active_square_list.size();
 
-    if (_active_square_list.empty()) {
+    unordered_map<int, int>& depth_maxes = DEPTH_MAP[move_count];
+    int depth = move_count > 50 ? depth_maxes[50] :
+                (move_count > 30 ? depth_maxes[30] :
+                (move_count > 10 ? depth_maxes[10] : depth_maxes[0]));
+    depth = min(depth, _win_count + 1);
+
+    // Clear transposition table periodically to prevent memory bloat
+    if (_transposition_table.size() > 500000) {
+        _transposition_table.clear();
+    }
+
+    _hash_threshold = max(depth / 2 - 1, 2);
+
+    if (_active_square_list.empty())
+    {
         return -1;
     }
 
@@ -112,10 +121,13 @@ int Game::aiTurn()
     bool found_final = false;
 
     // check for immediate winning moves for AI first (threat level 10000)
-    if (!found_final) {
-        for (int move : _active_square_list) {
+    if (!found_final)
+    {
+        for (int move : _active_square_list)
+        {
             int ai_threat = evaluateMoveThreat(move, 2);
-            if (ai_threat >= 10000) { // immediate win
+            if (ai_threat >= 10000)
+            { // immediate win
                 best_move = move;
                 best_score = 20000; // highest priority
                 found_final = true;
@@ -125,10 +137,13 @@ int Game::aiTurn()
     }
 
     // check for blocking immediate human wins (threat level 10000)
-    if (!found_final) {
-        for (int move : _active_square_list) {
+    if (!found_final)
+    {
+        for (int move : _active_square_list)
+        {
             int human_threat = evaluateMoveThreat(move, 1);
-            if (human_threat >= 10000) { // human immediate win threat
+            if (human_threat >= 10000)
+            { // human immediate win threat
                 best_move = move;
                 best_score = 19000; // second highest priority
                 found_final = true;
@@ -138,27 +153,32 @@ int Game::aiTurn()
     }
 
     // check for high-priority threats (level 1000 - one away from win)
-    if (!found_final) {
-        vector<pair<int, int>> threat_moves; // pair of (move, combined_threat_level)
+    if (!found_final)
+    {
+        vector<pair<int, int>> threat_moves;              // pair of (move, combined_threat_level)
         threat_moves.reserve(_active_square_list.size()); // reserve space
-        
-        for (int move : _active_square_list) {
+
+        for (int move : _active_square_list)
+        {
             int ai_threat = evaluateMoveThreat(move, 2);
             int human_threat = evaluateMoveThreat(move, 1);
             int combined_threat = ai_threat + human_threat; // AI opportunities + blocking value
-            
-            if (combined_threat >= 1000) {
+
+            if (combined_threat >= 1000)
+            {
                 threat_moves.emplace_back(move, combined_threat);
             }
         }
 
         // if we found high-priority threats, pick the best one
-        if (!threat_moves.empty()) {
-            sort(threat_moves.begin(), threat_moves.end(), 
-                 [](const pair<int,int>& a, const pair<int,int>& b) { 
-                     return a.second > b.second; 
+        if (!threat_moves.empty())
+        {
+            sort(threat_moves.begin(), threat_moves.end(),
+                 [](const pair<int, int> &a, const pair<int, int> &b)
+                 {
+                     return a.second > b.second;
                  });
-            
+
             best_move = threat_moves[0].first;
             best_score = threat_moves[0].second + 10000; // third priority level
             found_final = true;
@@ -166,30 +186,34 @@ int Game::aiTurn()
     }
 
     // use minimax for strategic evaluation when no immediate threats
-    if (!found_final) {
+    if (!found_final)
+    {
         // pre-allocate for performance
         static thread_local vector<pair<int, int>> move_scores;
         move_scores.clear();
         move_scores.reserve(_active_square_list.size());
-        
+
         const int alpha_start = LOSS_SCORE;
         const int beta_start = WIN_SCORE;
         int alpha = alpha_start;
-        
-        for (int move : _active_square_list) {
+
+        for (int move : _active_square_list)
+        {
             applyMove(move, 2);
             const int score = minimax(depth, false, alpha, beta_start);
             undoMove(move, 0);
 
             move_scores.emplace_back(move, score);
-            
-            if (score > best_score) {
+
+            if (score > best_score)
+            {
                 best_score = score;
                 alpha = max(alpha, score);
             }
-            
+
             // early termination for guaranteed wins
-            if (score >= WIN_SCORE - depth) {
+            if (score >= WIN_SCORE - depth)
+            {
                 break;
             }
         }
@@ -198,70 +222,79 @@ int Game::aiTurn()
         static thread_local vector<int> best_moves;
         best_moves.clear();
         best_moves.reserve(move_scores.size());
-        
-        for (const auto& [move, score] : move_scores) {
-            if (score == best_score) {
+
+        for (const auto &[move, score] : move_scores)
+        {
+            if (score == best_score)
+            {
                 best_moves.push_back(move);
             }
         }
 
         // strategic selection for multiple best moves
-        if (best_moves.size() > 1) {
+        if (best_moves.size() > 1)
+        {
             // find AI's most recent move
             int ai_last_move = -1;
-            for (int i = _board_size * _board_size - 1; i >= 0; i--) {
-                if (_board[i] == 2) {
+            for (int i = _board_size * _board_size - 1; i >= 0; i--)
+            {
+                if (_board[i] == 2)
+                {
                     ai_last_move = i;
                     break;
                 }
             }
-            
+
             int chosen_move = best_moves[0];
             int best_strategic_score = INT_MIN;
-            
-            for (int move : best_moves) {
+
+            for (int move : best_moves)
+            {
                 int strategic_score = 0;
-                const int move_row = move / _board_size;
-                const int move_col = move % _board_size;
-                
+
                 // proximity bonus
-                if (ai_last_move != -1) {
+                if (ai_last_move != -1)
+                {
                     const int ai_row = ai_last_move / _board_size;
                     const int ai_col = ai_last_move % _board_size;
+                    const int move_row = move / _board_size;
+                    const int move_col = move % _board_size;
                     const int distance = abs(ai_row - move_row) + abs(ai_col - move_col);
                     strategic_score += max(0, 10 - distance);
                 }
-                
+
                 // threat evaluation
                 const int ai_threat = evaluateMoveThreat(move, 2);
                 const int human_threat = evaluateMoveThreat(move, 1);
                 strategic_score += ai_threat + (human_threat >> 1); // bit shift for /2
-                
-                // center preference
-                const int center_row = _board_size >> 1; // bit shift for /2
-                const int center_col = _board_size >> 1;
-                const int center_distance = abs(center_row - move_row) + abs(center_col - move_col);
-                strategic_score += max(0, 5 - center_distance);
-                
-                if (strategic_score > best_strategic_score) {
+
+                // center preference using precalculated distances
+                strategic_score += max(0, 5 - _center_distances[move]);
+
+                if (strategic_score > best_strategic_score)
+                {
                     best_strategic_score = strategic_score;
                     chosen_move = move;
                 }
             }
-            
+
             best_move = chosen_move;
-        } else if (!best_moves.empty()) {
+        }
+        else if (!best_moves.empty())
+        {
             best_move = best_moves[0];
         }
     }
 
     // apply the best move found
-    if (best_move != -1) {
+    if (best_move != -1)
+    {
         applyMove(best_move, 2);
     }
 
     auto end_time = chrono::high_resolution_clock::now();
     auto duration = chrono::duration_cast<chrono::milliseconds>(end_time - start_time);
+    cout << "AI took " << duration.count() << " ms to decide on move: " << best_move << endl;
 
     return best_move;
 }
@@ -281,51 +314,78 @@ int Game::minimax(int depth, bool maximizing_player, int alpha, int beta)
     if (_active_square_list.empty())
         return TIE_SCORE;
 
+    // copy and order moves for better pruning
+    static thread_local vector<int> ordered_moves;
+    ordered_moves = _active_square_list;
+    orderMoves(ordered_moves, maximizing_player);
+
     int best_score = maximizing_player ? INT_MIN : INT_MAX;
     const uint_fast8_t current_player = maximizing_player ? 2 : 1;
-    
-    for (int move : _active_square_list) {
+
+    for (int move : ordered_moves)
+    {
         applyMove(move, current_player);
-        
+
         // check for terminal states immediately after move
         const int check_result = checkBoard(move, current_player);
         int score;
-        
-        if (check_result == 2) {
+
+        if (check_result == 2)
+        {
             score = TIE_SCORE;
-        } else if (check_result == 1) {
+        }
+        else if (check_result == 1)
+        {
             // win/loss with depth bonus for faster wins
             score = (current_player == 2) ? WIN_SCORE + depth : LOSS_SCORE - depth;
-        } else {
+        }
+        else
+        {
             // continue search
             score = minimax(depth - 1, !maximizing_player, alpha, beta);
         }
-        
+
         undoMove(move, 0);
 
         // update best score and alpha-beta bounds
-        if (maximizing_player) {
-            if (score > best_score) best_score = score;
+        if (maximizing_player)
+        {
+            if (score > best_score)
+                best_score = score;
             alpha = max(alpha, score);
-        } else {
-            if (score < best_score) best_score = score;
+        }
+        else
+        {
+            if (score < best_score)
+                best_score = score;
             beta = min(beta, score);
         }
 
-        // alpha-beta pruning
+        // killer move heuristic - store moves that cause cutoffs
         if (beta <= alpha)
-            break;
+        {
+            if (depth < static_cast<int>(_killer_moves.size()) && _killer_moves[depth].size() < 2)
+            {
+                auto it = find(_killer_moves[depth].begin(), _killer_moves[depth].end(), move);
+                if (it == _killer_moves[depth].end())
+                {
+                    _killer_moves[depth].push_back(move);
+                }
+            }
+            break; // alpha-beta pruning
+        }
     }
 
     // store in transposition table if above threshold
-    if (depth >= _hash_threshold) {
+    if (depth >= _hash_threshold)
+    {
         _transposition_table[_zobrist_hash] = best_score;
     }
 
     return best_score;
 }
 
-//########## CORE GAME METHODS ##########
+// ########## CORE GAME METHODS ##########
 
 void Game::initialize()
 {
@@ -499,59 +559,26 @@ void Game::initialize()
     cout << "You selected: " << _symbols[1] << endl;
 }
 
-//########## GAME LOGIC ##########
+// ########## GAME LOGIC ##########
 
 int Game::checkBoard(const int index, const uint_fast8_t player) const
 {
-    int row = index / _board_size;
-    int col = index % _board_size;
-    int check_index = index; // initialize check_index to the current index
+    // Use precalculated direction data for optimized win checking
+    const auto &direction_info = _direction_data[index];
 
     // check all 4 directions from the placed piece
-    int directions[4][2] = {
-        {0, 1}, // horizontal (→)
-        {1, 0}, // vertical (↓)
-        {1, 1}, // diagonal (↘)
-        {1, -1} // diagonal (↙)
-    };
-
-    for (int dir = 0; dir < 4; dir++)
+    for (int dir = 0; dir < DIRECTION_COUNT; dir++)
     {
-        int delta_row = directions[dir][0];
-        int delta_col = directions[dir][1];
+        const auto &dir_data = direction_info[dir];
         int count = 1; // count the current piece
 
-        // calculate boundary limits using branchless operations when possible
-        int positive_limit, negative_limit;
-        if (delta_row == 0)
-        { // horizontal (→)
-            positive_limit = _board_size - col;
-            negative_limit = col + 1;
-        }
-        else if (delta_col == 0)
-        { // vertical (↓)
-            positive_limit = _board_size - row;
-            negative_limit = row + 1;
-        }
-        else if (delta_col > 0)
-        { // diagonal (↘)
-            positive_limit = min(_board_size - row, _board_size - col);
-            negative_limit = min(row + 1, col + 1);
-        }
-        else
-        { // diagonal (↙)
-            positive_limit = min(_board_size - row, col + 1);
-            negative_limit = min(row + 1, _board_size - col);
-        }
+        const int max_steps_positive = min(_win_count, dir_data.positive_limit);
+        const int max_steps_negative = min(_win_count, dir_data.negative_limit);
 
-        int max_steps_positive = min(_win_count, positive_limit);
-        int max_steps_negative = min(_win_count, negative_limit);
-
-        // check positive direction - simple and fast
+        // check positive direction using precalculated step offset
         for (int step = 1; step < max_steps_positive; step++)
         {
-            check_index = (row + delta_row * step) * _board_size + (col + delta_col * step);
-            if (_board[check_index] == player)
+            if (_board[index + step * dir_data.step_offset] == player)
             {
                 count++;
             }
@@ -561,11 +588,10 @@ int Game::checkBoard(const int index, const uint_fast8_t player) const
             }
         }
 
-        // check negative direction - simple and fast
+        // check negative direction using precalculated step offset
         for (int step = 1; step < max_steps_negative; step++)
         {
-            check_index = (row - delta_row * step) * _board_size + (col - delta_col * step);
-            if (_board[check_index] == player)
+            if (_board[index - step * dir_data.step_offset] == player)
             {
                 count++;
             }
@@ -596,7 +622,7 @@ int Game::checkBoard(const int index, const uint_fast8_t player) const
     return 2;
 }
 
-//########## PLAYER INTERACTION ##########
+// ########## PLAYER INTERACTION ##########
 
 inline expected<int, string> Game::playerMove(const uint_fast8_t player_id)
 {
@@ -690,10 +716,12 @@ inline expected<void, string> Game::setSymbols(int player_choice)
 void Game::setBoardSize()
 {
     const int total_cells = _board_size * _board_size; // total number of cells in the board
-    _board.clear();                              // clear the board before resizing
+    _board.clear();                                    // clear the board before resizing
     _board.resize(total_cells, 0);
 
     generateAdjacentMap();
+    precalculateDirectionData();
+    precalculateOptimizations();
 
     std::mt19937_64 random_generator(123456789); // fixed seed for determinism
     std::uniform_int_distribution<zobrist_t> distribution;
@@ -717,96 +745,110 @@ void Game::setBoardSize()
     int transposition_table_size = min(1000000, 1 << min(20, _board_size * _board_size)); // cap memory usage
     _transposition_table.reserve(transposition_table_size);
 
+    // initialize killer moves table
+    _killer_moves.clear();
+    _killer_moves.resize(20); // max depth of 20
+    for (auto &killer_list : _killer_moves)
+    {
+        killer_list.reserve(2); // store up to 2 killer moves per depth
+    }
+
     _zobrist_hash = 0; // reset hash
 }
 
 //========== Helper Function for Threat Evaluation ==========
 int Game::evaluateMoveThreat(int move, uint_fast8_t player) const
 {
-    if (_board[move] != 0) return 0; // position occupied
-    
-    const int board_dimension = _board_size;
+    if (_board[move] != 0)
+        return 0; // position occupied
+
     const int win_requirement = _win_count;
     int max_threat_level = 0;
+
+    // Use precalculated direction data for optimized threat evaluation
+    const auto &direction_info = _direction_data[move];
     
-    const int row = move / board_dimension;
-    const int col = move % board_dimension;
-    
-    // temporarily place piece
-    const_cast<vector<uint_fast8_t>&>(_board)[move] = player;
-    
-    // check all 4 directions for threats with optimized boundary checking
-    static constexpr int directions[4][2] = {{0, 1}, {1, 0}, {1, 1}, {1, -1}};
-    
-    for (int direction_index = 0; direction_index < 4; direction_index++) {
-        const int delta_row = directions[direction_index][0];
-        const int delta_col = directions[direction_index][1];
-        int count = 1; // count the piece we just placed
-        
-        // pre-calculate boundary limits for better performance
-        int positive_limit, negative_limit;
-        if (delta_row == 0) { // horizontal
-            positive_limit = board_dimension - col;
-            negative_limit = col + 1;
-        } else if (delta_col == 0) { // vertical
-            positive_limit = board_dimension - row;
-            negative_limit = row + 1;
-        } else if (delta_col > 0) { // diagonal
-            positive_limit = min(board_dimension - row, board_dimension - col);
-            negative_limit = min(row + 1, col + 1);
-        } else { // diagonal
-            positive_limit = min(board_dimension - row, col + 1);
-            negative_limit = min(row + 1, board_dimension - col);
-        }
-        
-        const int max_steps_positive = min(win_requirement, positive_limit);
-        const int max_steps_negative = min(win_requirement, negative_limit);
-        
-        // count in positive direction with branchless optimization
-        const int base_index = row * board_dimension + col;
-        const int step_offset = delta_row * board_dimension + delta_col;
-        
-        for (int step = 1; step < max_steps_positive; step++) {
-            if (_board[base_index + step * step_offset] == player) {
+    for (int dir = 0; dir < DIRECTION_COUNT; dir++)
+    {
+        const auto &dir_data = direction_info[dir];
+        int count = 1; // count the hypothetical piece
+
+        const int max_steps_positive = min(win_requirement, dir_data.positive_limit);
+        const int max_steps_negative = min(win_requirement, dir_data.negative_limit);
+
+        // Check positive direction
+        for (int step = 1; step < max_steps_positive; step++)
+        {
+            if (_board[move + step * dir_data.step_offset] == player)
+            {
                 count++;
-            } else {
-                break;
+            }
+            else
+            {
+                break; // early exit on first empty/opponent piece
             }
         }
-        
-        // count in negative direction with branchless optimization
-        for (int step = 1; step < max_steps_negative; step++) {
-            if (_board[base_index - step * step_offset] == player) {
+
+        // Check negative direction
+        for (int step = 1; step < max_steps_negative; step++)
+        {
+            if (_board[move - step * dir_data.step_offset] == player)
+            {
                 count++;
-            } else {
-                break;
+            }
+            else
+            {
+                break; // early exit on first empty/opponent piece
             }
         }
-        
-        // calculate threat level with early exit for immediate wins
-        if (count >= win_requirement) {
-            max_threat_level = 10000;
-            break; // immediate win found
-        } else if (count == win_requirement - 1) {
+
+        // Calculate threat level with early exit for immediate wins
+        if (count >= win_requirement)
+        {
+            return 10000; // immediate win found - return immediately
+        }
+        else if (count == win_requirement - 1)
+        {
             max_threat_level = max(max_threat_level, 1000);
-        } else if (count == win_requirement - 2) {
+        }
+        else if (count == win_requirement - 2)
+        {
             max_threat_level = max(max_threat_level, 100);
-        } else if (count >= 2) {
+        }
+        else if (count >= 2)
+        {
             max_threat_level = max(max_threat_level, 10);
         }
     }
-    
-    // remove the temporary piece
-    const_cast<vector<uint_fast8_t>&>(_board)[move] = 0;
-    
+
     return max_threat_level;
 }
 
+//========== Move Ordering for Better Alpha-Beta Pruning ==========
+void Game::orderMoves(vector<int> &moves, bool maximizing_player) const
+{
+    const uint_fast8_t player = maximizing_player ? 2 : 1;
+    const uint_fast8_t opponent = maximizing_player ? 1 : 2;
+
+    // sort moves by threat level (highest threat first)
+    sort(moves.begin(), moves.end(), [this, player, opponent](int a, int b)
+         {
+        int a_threat = evaluateMoveThreat(a, player) + evaluateMoveThreat(a, opponent);
+        int b_threat = evaluateMoveThreat(b, player) + evaluateMoveThreat(b, opponent);
+        
+        // prioritize center positions if threats are equal
+        if (a_threat == b_threat) {
+            return _center_distances[a] < _center_distances[b];
+        }
+        
+        return a_threat > b_threat; });
+}
+
+//========== Precalculations ==========
 void Game::generateAdjacentMap()
 {
     const int directions[8][2] = {
-        {-1, -1}, {-1, 0}, {-1, 1}, {0, -1}, {0, 1}, {1, -1}, {1, 0}, {1, 1}
-    };
+        {-1, -1}, {-1, 0}, {-1, 1}, {0, -1}, {0, 1}, {1, -1}, {1, 0}, {1, 1}};
 
     _adjacent_map.clear();
 
@@ -831,69 +873,240 @@ void Game::generateAdjacentMap()
     }
 }
 
+void Game::precalculateDirectionData()
+{
+    const int total_cells = _board_size * _board_size;
+    _direction_data.resize(total_cells);
+
+    // Direction vectors: horizontal, vertical, diagonal(\), diagonal(/)
+    static constexpr int directions[4][2] = {{0, 1}, {1, 0}, {1, 1}, {1, -1}};
+
+    for (int position = 0; position < total_cells; ++position)
+    {
+        const int row = position / _board_size;
+        const int col = position % _board_size;
+
+        for (int dir = 0; dir < DIRECTION_COUNT; ++dir)
+        {
+            const int delta_row = directions[dir][0];
+            const int delta_col = directions[dir][1];
+
+            // Calculate step offset for this direction
+            const int step_offset = delta_row * _board_size + delta_col;
+
+            // Calculate positive and negative limits
+            int positive_limit, negative_limit;
+            if (delta_row == 0)
+            { // horizontal
+                positive_limit = _board_size - col;
+                negative_limit = col + 1;
+            }
+            else if (delta_col == 0)
+            { // vertical
+                positive_limit = _board_size - row;
+                negative_limit = row + 1;
+            }
+            else if (delta_col > 0)
+            { // diagonal (\)
+                positive_limit = min(_board_size - row, _board_size - col);
+                negative_limit = min(row + 1, col + 1);
+            }
+            else
+            { // diagonal (/)
+                positive_limit = min(_board_size - row, col + 1);
+                negative_limit = min(row + 1, _board_size - col);
+            }
+
+            _direction_data[position][dir] = {
+                step_offset,
+                positive_limit,
+                negative_limit};
+        }
+    }
+}
+
+void Game::precalculateOptimizations()
+{
+    const int total_cells = _board_size * _board_size;
+
+    // Initialize temp board for threat evaluation
+    _temp_board.resize(total_cells, 0);
+
+    // Precalculate all line positions for each cell and direction
+    _line_positions.resize(total_cells * DIRECTION_COUNT);
+
+    for (int position = 0; position < total_cells; ++position)
+    {
+        for (int dir = 0; dir < DIRECTION_COUNT; ++dir)
+        {
+            const int index = position * DIRECTION_COUNT + dir;
+            const auto &dir_data = _direction_data[position][dir];
+
+            _line_positions[index].reserve(_win_count * 2); // max possible line length
+
+            // Add positions in negative direction
+            for (int step = dir_data.negative_limit - 1; step >= 1; step--)
+            {
+                _line_positions[index].push_back(position - step * dir_data.step_offset);
+            }
+
+            // Add current position
+            _line_positions[index].push_back(position);
+
+            // Add positions in positive direction
+            for (int step = 1; step < dir_data.positive_limit; step++)
+            {
+                _line_positions[index].push_back(position + step * dir_data.step_offset);
+            }
+        }
+    }
+
+    // Precalculate center distances
+    _center_distances.resize(total_cells);
+    const int center_row = _board_size >> 1;
+    const int center_col = _board_size >> 1;
+
+    for (int position = 0; position < total_cells; ++position)
+    {
+        const int row = position / _board_size;
+        const int col = position % _board_size;
+        _center_distances[position] = abs(center_row - row) + abs(center_col - col);
+    }
+}
+
 //========== Fast Board Evaluation ==========
 int Game::evalBoard(const bool maximizing_player) const
 {
     static constexpr int AI_PLAYER = 2;
     static constexpr int HUMAN_PLAYER = 1;
-    
+
     int score = 0;
-    
-    // for larger boards, use simplified evaluation for performance
-    if (_board_size >= 8) {
-        // only evaluate high-value threats for large boards
-        for (int move : _active_square_list) {
-            const int ai_threat = evaluateMoveThreat(move, AI_PLAYER);
-            const int human_threat = evaluateMoveThreat(move, HUMAN_PLAYER);
-            
-            // only count significant threats (>= 100) to reduce computation
-            if (ai_threat >= 100) score += ai_threat;
-            if (human_threat >= 100) score += human_threat;
+
+    // clear threat cache for new evaluation
+    _threat_cache.clear();
+
+    // for very large boards, use extremely simplified evaluation
+    if (_board_size >= 15)
+    {
+        // only evaluate immediate threats for very large boards
+        for (int move : _active_square_list)
+        {
+            auto it = _threat_cache.find(move);
+            int ai_threat, human_threat;
+
+            if (it != _threat_cache.end())
+            {
+                ai_threat = it->second.first;
+                human_threat = it->second.second;
+            }
+            else
+            {
+                ai_threat = evaluateMoveThreat(move, AI_PLAYER);
+                human_threat = evaluateMoveThreat(move, HUMAN_PLAYER);
+                _threat_cache[move] = {ai_threat, human_threat};
+            }
+
+            // only count critical threats (>= 1000) to minimize computation
+            if (ai_threat >= 1000)
+                score += ai_threat;
+            if (human_threat >= 1000)
+                score -= human_threat;
         }
-    } else {
+    }
+    else if (_board_size >= 8)
+    {
+        // only evaluate high-value threats for large boards
+        for (int move : _active_square_list)
+        {
+            auto it = _threat_cache.find(move);
+            int ai_threat, human_threat;
+
+            if (it != _threat_cache.end())
+            {
+                ai_threat = it->second.first;
+                human_threat = it->second.second;
+            }
+            else
+            {
+                ai_threat = evaluateMoveThreat(move, AI_PLAYER);
+                human_threat = evaluateMoveThreat(move, HUMAN_PLAYER);
+                _threat_cache[move] = {ai_threat, human_threat};
+            }
+
+            // only count significant threats (>= 100) to reduce computation
+            if (ai_threat >= 100)
+                score += ai_threat;
+            if (human_threat >= 100)
+                score -= human_threat;
+        }
+    }
+    else
+    {
         // full evaluation for smaller boards
-        for (int move : _active_square_list) {
-            const int ai_threat = evaluateMoveThreat(move, AI_PLAYER);
-            const int human_threat = evaluateMoveThreat(move, HUMAN_PLAYER);
-            score += ai_threat + human_threat;
+        for (int move : _active_square_list)
+        {
+            auto it = _threat_cache.find(move);
+            int ai_threat, human_threat;
+
+            if (it != _threat_cache.end())
+            {
+                ai_threat = it->second.first;
+                human_threat = it->second.second;
+            }
+            else
+            {
+                ai_threat = evaluateMoveThreat(move, AI_PLAYER);
+                human_threat = evaluateMoveThreat(move, HUMAN_PLAYER);
+                _threat_cache[move] = {ai_threat, human_threat};
+            }
+
+            score += ai_threat - human_threat;
         }
     }
 
     return maximizing_player ? score : -score;
 }
 
-//########## BOARD STATE MANAGEMENT ##########
+// ########## BOARD STATE MANAGEMENT ##########
 
-inline void Game::markActive(int index) {
-    if (_neighbor_count[index] > 0 && !_board[index] && _active_square_set.insert(index).second) {
+inline void Game::markActive(int index)
+{
+    if (_neighbor_count[index] > 0 && !_board[index] && _active_square_set.insert(index).second)
+    {
         _active_square_list.push_back(index);
     }
 }
 
-inline void Game::unmarkActive(int index) {
-    if (_neighbor_count[index] == 0 && !_board[index] && _active_square_set.erase(index)) {
+inline void Game::unmarkActive(int index)
+{
+    if (_neighbor_count[index] == 0 && !_board[index] && _active_square_set.erase(index))
+    {
         _active_square_list.erase(
             std::remove(_active_square_list.begin(), _active_square_list.end(), index),
             _active_square_list.end());
     }
 }
 
-inline void Game::applyMove(int index, uint_fast8_t player) {
-    // update hash & board 
+inline void Game::applyMove(int index, uint_fast8_t player)
+{
+    // update hash & board
     _zobrist_hash ^= _zobrist_table[index][_board[index]];
 
     _board[index] = player;
 
-    // 1) remove the cell itself from active  
-    if (_active_square_set.erase(index)) {
+    // 1) remove the cell itself from active
+    if (_active_square_set.erase(index))
+    {
         _active_square_list.erase(
-          std::remove(_active_square_list.begin(), _active_square_list.end(), index),
-          _active_square_list.end());
+            std::remove(_active_square_list.begin(), _active_square_list.end(), index),
+            _active_square_list.end());
     }
 
     // 2) for each neighbor, increment count; if it goes 0→1, mark active
-    for (int neighbor : _adjacent_map[index]) {
-        if (_board[neighbor] == 0) {
+    for (int neighbor : _adjacent_map[index])
+    {
+        if (_board[neighbor] == 0)
+        {
             _neighbor_count[neighbor]++;
             markActive(neighbor);
         }
@@ -902,34 +1115,39 @@ inline void Game::applyMove(int index, uint_fast8_t player) {
     _zobrist_hash ^= _zobrist_table[index][player];
 }
 
-inline void Game::undoMove(int index, uint_fast8_t previous_player) {
+inline void Game::undoMove(int index, uint_fast8_t previous_player)
+{
     // update hash & board back
     _zobrist_hash ^= _zobrist_table[index][_board[index]];
     _board[index] = previous_player;
 
     // 1) for each neighbor, decrement; if it falls 1→0, unmark active
-    for (int neighbor : _adjacent_map[index]) {
-        if (_board[neighbor] == 0) {
+    for (int neighbor : _adjacent_map[index])
+    {
+        if (_board[neighbor] == 0)
+        {
             _neighbor_count[neighbor]--;
             unmarkActive(neighbor);
         }
     }
 
-    // 2) if you're undoing a real move (making it empty),  
+    // 2) if you're undoing a real move (making it empty),
     //    and its neighbors >0, then it itself should be active again:
-    if (previous_player == 0) {
+    if (previous_player == 0)
+    {
         int count = 0;
         for (int neighbor : _adjacent_map[index])
-            if (_board[neighbor]) ++count;
+            if (_board[neighbor])
+                ++count;
 
         _neighbor_count[index] = count;
 
-        if (count > 0) markActive(index);
+        if (count > 0)
+            markActive(index);
     }
 
     _zobrist_hash ^= _zobrist_table[index][previous_player];
 }
-
 
 // //########## DEPRECATED FUNCTION ##########
 // inline vector<int> Game::getAvailableMoves(const bool player_turn, const int last_move)

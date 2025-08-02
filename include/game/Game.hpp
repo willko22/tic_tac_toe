@@ -5,6 +5,7 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <cstdint>
+#include <array>
 
 using BoardVec = std::vector<std::uint_fast8_t>;
 using zobrist_t = uint64_t;
@@ -26,6 +27,14 @@ private:
     static constexpr int TIE_SCORE = 0;
     static constexpr const char* MOVE_SEPARATOR = "===========================================================";
     
+    // Depth map: board_size -> {move_count_threshold -> depth}
+    std::unordered_map<int, std::unordered_map<int, int>> DEPTH_MAP = {
+        {20, {{50, 2}, {30, 3}, {10, 4}, {0, 5}}},
+        {15, {{50, 3}, {30, 4}, {10, 5}, {0, 6}}},
+        {10, {{50, 4}, {30, 5}, {10, 6}, {0, 7}}},
+        {5,  {{50, 5}, {30, 6}, {10, 7}, {0, 8}}}
+    };
+
     //========== Game Configuration ==========
     int _board_size = 3;
     int _win_count = 3;
@@ -50,6 +59,22 @@ private:
     zobrist_t _zobrist_hash = 0;
     std::vector<std::array<zobrist_t, 3>> _zobrist_table;
     uint_fast8_t _hash_threshold = 3;
+    std::vector<std::vector<int>> _killer_moves; // [depth][killer_index]
+    
+    //========== Precalculated Movement Data ==========
+    struct DirectionInfo {
+        int step_offset;
+        int positive_limit;
+        int negative_limit;
+    };
+    std::vector<std::array<DirectionInfo, 4>> _direction_data; // [position][direction]
+    static constexpr int DIRECTION_COUNT = 4;
+    
+    //========== Performance Optimizations ==========
+    mutable std::vector<uint_fast8_t> _temp_board; // for threat evaluation without const_cast
+    std::vector<std::vector<int>> _line_positions; // [position][direction] -> all positions in that line
+    std::vector<int> _center_distances; // precalculated distances from center for each position
+    mutable std::unordered_map<int, std::pair<int, int>> _threat_cache; // cache for threat values [move] -> (ai_threat, human_threat)
 
     //########## PRIVATE METHODS ##########
     //========== Core Game Methods ==========
@@ -57,6 +82,8 @@ private:
     void cleanup();
     void setBoardSize();
     void generateAdjacentMap();
+    void precalculateDirectionData();
+    void precalculateOptimizations();
     
     //========== Player Interaction ==========
     std::expected<int, std::string> playerMove(uint_fast8_t player_id);
@@ -71,6 +98,7 @@ private:
     int minimax(int depth, bool maximizing_player, int alpha, int beta);
     int evalBoard(bool maximizing_player) const;
     int evaluateMoveThreat(int move, uint_fast8_t player) const;
+    void orderMoves(std::vector<int>& moves, bool maximizing_player) const;
     
     //========== Board State Management ==========
     void markActive(int index);

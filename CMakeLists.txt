@@ -24,7 +24,13 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # Configure different build types
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -Wall -Wextra")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -s")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -s -march=native -mtune=native -flto")
+
+# For MSVC, add similar optimizations
+if(MSVC)
+    set(CMAKE_CXX_FLAGS_RELEASE "/O2 /Ob2 /Oi /Ot /GL /DNDEBUG")
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "/LTCG")
+endif()
 
 # Include directories
 include_directories(${CMAKE_SOURCE_DIR}/include)
@@ -110,11 +116,11 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_compile_options(${PROJECT_NAME} PRIVATE
         -Wall -Wextra -Wpedantic
         $<$<CONFIG:Debug>:-g -O0>
-        $<$<CONFIG:Release>:-O3 -s>
+        $<$<CONFIG:Release>:-O3 -s -march=native -mtune=native -flto>
     )
     # Add size optimization flags for release
     target_link_options(${PROJECT_NAME} PRIVATE
-        $<$<CONFIG:Release>:-s -Wl,--gc-sections>
+        $<$<CONFIG:Release>:-s -Wl,--gc-sections -flto>
     )
     
     # Static linking for self-contained executable
@@ -123,7 +129,10 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(${PROJECT_NAME} PRIVATE
         /W4
         $<$<CONFIG:Debug>:/Od /Zi>
-        $<$<CONFIG:Release>:/O2>
+        $<$<CONFIG:Release>:/O2 /Ob2 /Oi /Ot /GL>
+    )
+    target_link_options(${PROJECT_NAME} PRIVATE
+        $<$<CONFIG:Release>:/LTCG>
     )
 endif()
 
