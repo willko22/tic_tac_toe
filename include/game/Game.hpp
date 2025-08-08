@@ -43,6 +43,7 @@ private:
     bool _with_ai = true;
     int _last_move = -1;
     bool _running = false;
+    int _dm_i = 5;
     
     //========== Board State ==========
     BoardVec _board;

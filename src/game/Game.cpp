@@ -97,8 +97,8 @@ int Game::aiTurn()
     auto start_time = chrono::high_resolution_clock::now();
 
     int move_count = _active_square_list.size();
-
-    unordered_map<int, int>& depth_maxes = DEPTH_MAP[move_count];
+            
+    unordered_map<int, int>& depth_maxes = DEPTH_MAP[_dm_i];
     int depth = move_count > 50 ? depth_maxes[50] :
                 (move_count > 30 ? depth_maxes[30] :
                 (move_count > 10 ? depth_maxes[10] : depth_maxes[0]));
@@ -116,9 +116,11 @@ int Game::aiTurn()
         return -1;
     }
 
-    int best_move = -1;
+    int best_move = _active_square_list.empty() ? -1 : _active_square_list[0]; // Initialize to first valid move
     int best_score = INT_MIN;
     bool found_final = false;
+
+    cout << "DEBUG: Initial best_move=" << best_move << endl;
 
     // check for immediate winning moves for AI first (threat level 10000)
     if (!found_final)
@@ -131,6 +133,7 @@ int Game::aiTurn()
                 best_move = move;
                 best_score = 20000; // highest priority
                 found_final = true;
+                cout << "DEBUG: Found AI winning move=" << best_move << endl;
                 break;
             }
         }
@@ -147,6 +150,7 @@ int Game::aiTurn()
                 best_move = move;
                 best_score = 19000; // second highest priority
                 found_final = true;
+                cout << "DEBUG: Found blocking move=" << best_move << endl;
                 break;
             }
         }
@@ -182,8 +186,11 @@ int Game::aiTurn()
             best_move = threat_moves[0].first;
             best_score = threat_moves[0].second + 10000; // third priority level
             found_final = true;
+            cout << "DEBUG: Found threat move=" << best_move << endl;
         }
     }
+
+    cout << "DEBUG: Before minimax, best_move=" << best_move << ", found_final=" << found_final << endl;
 
     // use minimax for strategic evaluation when no immediate threats
     if (!found_final)
@@ -286,9 +293,23 @@ int Game::aiTurn()
         }
     }
 
+    cout << "DEBUG: Final best_move=" << best_move << endl;
+
     // apply the best move found
     if (best_move != -1)
     {
+        // Validate the move
+        if (best_move < 0 || best_move >= static_cast<int>(_board.size()))
+        {
+            cout << "ERROR: Invalid move index " << best_move << " - out of bounds!" << endl;
+            cout << "Active moves: ";
+            for (int move : _active_square_list) {
+                cout << move << " ";
+            }
+            cout << endl;
+            return -1;
+        }
+        
         applyMove(best_move, 2);
     }
 
@@ -719,6 +740,10 @@ void Game::setBoardSize()
     _board.clear();                                    // clear the board before resizing
     _board.resize(total_cells, 0);
 
+    _dm_i = _board_size >= 20 ? 20 :
+                (_board_size >= 15 ? 15 :
+                (_board_size >= 10 ? 10 : 5));
+
     generateAdjacentMap();
     precalculateDirectionData();
     precalculateOptimizations();
@@ -726,6 +751,7 @@ void Game::setBoardSize()
     std::mt19937_64 random_generator(123456789); // fixed seed for determinism
     std::uniform_int_distribution<zobrist_t> distribution;
 
+    _zobrist_table.clear();
     _zobrist_table.resize(total_cells);
     for (auto &cell : _zobrist_table)
     {
@@ -851,11 +877,15 @@ void Game::generateAdjacentMap()
         {-1, -1}, {-1, 0}, {-1, 1}, {0, -1}, {0, 1}, {1, -1}, {1, 0}, {1, 1}};
 
     _adjacent_map.clear();
+    _adjacent_map.reserve(_board_size * _board_size);
 
     for (int i = 0; i < _board_size * _board_size; ++i)
     {
         int row = i / _board_size;
         int col = i % _board_size;
+
+        std::vector<int> neighbors;
+        neighbors.reserve(8);
 
         for (const auto &[delta_row, delta_col] : directions)
         {
@@ -867,9 +897,10 @@ void Game::generateAdjacentMap()
                 adjacent_col >= 0 && adjacent_col < _board_size)
             {
                 int adjacent_index = adjacent_row * _board_size + adjacent_col;
-                _adjacent_map[i].push_back(adjacent_index);
+                neighbors.push_back(adjacent_index);
             }
         }
+        _adjacent_map.emplace(i, std::move(neighbors));
     }
 }
 
@@ -1089,6 +1120,12 @@ inline void Game::unmarkActive(int index)
 
 inline void Game::applyMove(int index, uint_fast8_t player)
 {
+    // Bounds checking
+    if (index < 0 || index >= static_cast<int>(_board.size()))
+    {
+        throw std::out_of_range("Invalid board index in applyMove: " + std::to_string(index));
+    }
+
     // update hash & board
     _zobrist_hash ^= _zobrist_table[index][_board[index]];
 
@@ -1103,7 +1140,7 @@ inline void Game::applyMove(int index, uint_fast8_t player)
     }
 
     // 2) for each neighbor, increment count; if it goes 0→1, mark active
-    for (int neighbor : _adjacent_map[index])
+    for (int neighbor : _adjacent_map.at(index))
     {
         if (_board[neighbor] == 0)
         {
@@ -1122,7 +1159,7 @@ inline void Game::undoMove(int index, uint_fast8_t previous_player)
     _board[index] = previous_player;
 
     // 1) for each neighbor, decrement; if it falls 1→0, unmark active
-    for (int neighbor : _adjacent_map[index])
+    for (int neighbor : _adjacent_map.at(index))
     {
         if (_board[neighbor] == 0)
         {
