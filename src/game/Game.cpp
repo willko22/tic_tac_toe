@@ -120,8 +120,6 @@ int Game::aiTurn()
     int best_score = INT_MIN;
     bool found_final = false;
 
-    cout << "DEBUG: Initial best_move=" << best_move << endl;
-
     // check for immediate winning moves for AI first (threat level 10000)
     if (!found_final)
     {
@@ -133,7 +131,6 @@ int Game::aiTurn()
                 best_move = move;
                 best_score = 20000; // highest priority
                 found_final = true;
-                cout << "DEBUG: Found AI winning move=" << best_move << endl;
                 break;
             }
         }
@@ -189,8 +186,6 @@ int Game::aiTurn()
             cout << "DEBUG: Found threat move=" << best_move << endl;
         }
     }
-
-    cout << "DEBUG: Before minimax, best_move=" << best_move << ", found_final=" << found_final << endl;
 
     // use minimax for strategic evaluation when no immediate threats
     if (!found_final)
@@ -293,23 +288,9 @@ int Game::aiTurn()
         }
     }
 
-    cout << "DEBUG: Final best_move=" << best_move << endl;
-
     // apply the best move found
     if (best_move != -1)
     {
-        // Validate the move
-        if (best_move < 0 || best_move >= static_cast<int>(_board.size()))
-        {
-            cout << "ERROR: Invalid move index " << best_move << " - out of bounds!" << endl;
-            cout << "Active moves: ";
-            for (int move : _active_square_list) {
-                cout << move << " ";
-            }
-            cout << endl;
-            return -1;
-        }
-        
         applyMove(best_move, 2);
     }
 
